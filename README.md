@@ -7,3 +7,9 @@ i will updating each chapter i commit and i will write down the bonus stuff i di
 
 I will start documenting from Chapter 6 since chapters before aren't really a thing but more like introduction to C and so on...
 
+
+
+CHAPTER 6 BONUS:
+1. support for decimal numbers
+2. support for the modulo operator
+3. changed the grammar from polish notation to conventional notation
