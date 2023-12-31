@@ -3,6 +3,8 @@
 #include "mpc.h"
 #include <string.h>
 #include <math.h>
+
+
 // if we are compiling on Windows compile these functions
 #ifdef _WIN32
 static char buffer[2048];
@@ -28,25 +30,61 @@ void add_history(char* unused) {}
 #include <editline/readline.h>
 #endif
 
+
+
+// struct for error handling
+
+// lval stands for lispy value
+typedef struct {
+    int type;
+    long num;
+    int err;    
+}lval;
+
+
+
+
+// ENUMS
+
+// to differentiate bewteen error and number from the obtained result
+enum { LVAL_NUM, LVAL_ERR };
+
+// to differentiate between the type of error
+/*
+1. Division by zero
+2. Invalid operator
+3. Invalid number (too big)
+*/
+enum { LERR_DIV_ZERO, LERR_BAD_OP, LERR_BAD_NUM };
+
+
+
+
+
 // Function Prototypes
-int evaluate(mpc_ast_t * t);
-int evaluate_operation(long x , char* op, long y);
+lval evaluate(mpc_ast_t * t);
+lval evaluate_operation(lval x , char* op, lval y);
 int number_of_nodes(mpc_ast_t * t);
-// buffer for user input
-static char input[2048];
+void print_stuff(mpc_ast_t * t);
+lval lval_num(long x);
+lval lval_err(int x);
+void lval_print(lval v);
+
+
+
+
+
 
 
 
 /*
 BONUS EXERCISES:
-1. Add the ability to use the exponentiation operator using the ^ symbol.
-2. Add the ability to use the modulo operator using the % symbol.
-3. Add the ability to use the max and min functions.
-4. Count the number of nodes in a given AST using a new function int number_of_nodes(mpc_ast_t* t).
-5 Count the maximum number of branches of a single node in an AST using a new function int max_number_of_children(mpc_ast_t* t).
-6. Add a new function int max(int a, int b) that returns the maximum of two integers.
-7. Add support for textual operator names (add, sub, mul, div, mod, exp, max, min).
 */
+
+
+// buffer for user input
+static char input[2048];
+
 
 int main(int argc, char** argv) {
 
@@ -62,8 +100,8 @@ int main(int argc, char** argv) {
     "                                                                                                                                               \
     number      : /-?(([0-9]+\\.[0-9]+)|([0-9]+))/ ;                                                                                                \
     operator    : \"max\" | \"min\" | '+' | \"add\" | '-' | \"sub\" | '*' | \"mul\" | '/' | \"div\" | '%' | \"mod\" | '^' | \"exp\" ;               \
-    expr        : <number> | '(' <expr> <operator> <expr> ')' ;                                                                                     \
-    lispy       : /^/ <expr> <operator> <expr> /$/ ;                                                                                                \
+    expr        : <number> | '(' <operator> <expr>+')' ;                                                                                     \
+    lispy       : /^/ <operator> <expr>+ /$/ ;                                                                                            \
     ",
     Number, Operator, Expr, Lispy);
 
@@ -74,17 +112,25 @@ int main(int argc, char** argv) {
         char* input = readline("lispy> ");
         add_history(input);
 
-
+        // exit
         if (strcmp(input, "exit") == 0) {
             break;
         }
+
+        // clear screen
+        if (strcmp(input, "clear") == 0) {
+            printf("\e[1;1H\e[2J");
+            continue;
+        }
+        
 
         // try to parse the user input
         mpc_result_t r;
         if (mpc_parse("<stdin>", input, Lispy, &r)) {
             // on success evaluate the expression and print the result
-            long result = evaluate(r.output);
-            printf("%li\n", result);
+            // the result might be an error or a number
+            lval result = evaluate(r.output);
+            lval_print(result);
             mpc_ast_delete(r.output);
         }
         else {
@@ -102,101 +148,108 @@ int main(int argc, char** argv) {
 
 }
 
+// function to print the number or the proper error message
+void lval_print(lval v) {
+    switch (v.type) {
+    // if the type is a number print it
+    case LVAL_NUM: printf("%li\n", v.num); break;
+    // if the type is an error print the error message
+    case LVAL_ERR:
+        if (v.err == LERR_DIV_ZERO) { printf("Error: Division by zero!\n"); }
+        if (v.err == LERR_BAD_OP) { printf("Error: Invalid operator!\n"); }
+        if (v.err == LERR_BAD_NUM) { printf("Error: Invalid number!\n"); }
+        break;
+    }
+}
 
 
 
-int evaluate(mpc_ast_t * t){
+
+lval evaluate(mpc_ast_t * t){
     // if tagged as number return the value
+    // try to convert the contents to a number
+    // if too big or too small return an error
     if (strstr(t->tag, "number")) {
-        return atoi(t->contents);
+        errno = 0;
+        long x = strtol(t->contents, NULL, 10);
+        return errno != ERANGE ? lval_num(x) : lval_err(LERR_BAD_NUM);
     }
 
     /*
     in an expression child order is:
     0: '('
-    1: <expr>
-    2: <operator>
+    1: <operator>
+    2: <expr>
     3: <expr>
-    4: ')'
+    ...
+    last: ')'
     */
     
 
     // get the operator 
-    char * operation = t->children[2]->contents;
+    char * operation = t->children[1]->contents;
 
     // get the value of the first and second expressions
 
-    long first = evaluate(t->children[1]);
-    long second = evaluate(t->children[3]);
+    lval first = evaluate(t->children[2]);
+    int i = 3;
+    // iterate over the remaining children and combine the result
+    while (strstr(t->children[i]->tag, "expr")) {
+        first = evaluate_operation(first, operation, evaluate(t->children[i]));
+        i++;
+    }
 
-    // evaluate
-    return evaluate_operation(first, operation, second);
+    return first;
 
 }
 
+lval evaluate_operation(lval x , char* op, lval y){
 
-int evaluate_operation(long x , char* op, long y){
-    if (strcmp(op, "+") == 0 || strcmp(op, "add") == 0) {
-        return x + y;
-    }
-    if (strcmp(op, "-" ) == 0 || strcmp(op, "sub") == 0) {
-        return x - y;
-    }
-    if (strcmp(op, "*") == 0 || strcmp(op, "mul") == 0) {
-        return x * y;
-    }
+    // if any of the numbers is an error return it
+    if (x.type == LVAL_ERR) { return x; }
+    if (y.type == LVAL_ERR) { return y; }
+
+
+    // check the operator and perform the operation
+    if (strcmp(op, "+") == 0 || strcmp(op, "add") == 0) {return lval_num(x.num + y.num);}
+    if (strcmp(op, "-" ) == 0 || strcmp(op, "sub") == 0) {return lval_num(x.num - y.num);}
+    if (strcmp(op, "*") == 0 || strcmp(op, "mul") == 0) {return lval_num(x.num * y.num);}
+    // for the division we have to check for division by zero
     if (strcmp(op, "/") == 0 || strcmp(op, "div") == 0) {
-        return x / y;
+        return y.num != 0 ? lval_num(x.num / y.num) : lval_err(LERR_DIV_ZERO);
     }
-    if (strcmp(op, "^") == 0 || strcmp(op, "exp") == 0) {
-        return pow(x, y);
-    }
-    if (strcmp(op, "%") == 0 || strcmp(op, "mod") == 0) {
-        return x % y;
-    }
-    if (strcmp(op, "min") == 0) {
-        return x < y ? x : y;
-    }
-    if (strcmp(op, "max") == 0) {
-        return x > y ? x : y;
-    }
-    return 0;
+
+    if (strcmp(op, "^") == 0 || strcmp(op, "exp") == 0) {return lval_num(pow(x.num, y.num));}
+    if (strcmp(op, "%") == 0 || strcmp(op, "mod") == 0) {return lval_num(x.num % y.num);}
+    if (strcmp(op, "min") == 0) {return x.num < y.num ? x : y;}
+    if (strcmp(op, "max") == 0) {return x.num > y.num ? x : y; }
+
+    // if none match then return an error
+    return lval_err(LERR_BAD_OP);
 }
 
 
-int number_of_nodes(mpc_ast_t * t) {
-    if (t->children_num == 0) {
-        return 1;
-    }
-    if (t->children_num >= 1) {
-        int total = 1;
-        for (int i = 0; i < t->children_num; i++) {
-            total += number_of_nodes(t->children[i]);
-        }
-        return total;
-    }
-    return 0;
+// functions to create lval for evaluation
+
+
+
+// here x is the actual number values we want
+lval lval_num(long x){
+    lval v;
+    v.type = LVAL_NUM;
+    v.num = x;
+    return v;
+}
+
+// whereas here x is the error type which is defined in the enum
+// so when calling this function we will give it an enum value as an argument and it will be
+// interpreted as an integer 
+lval lval_err(int x){
+    lval v;
+    v.type = LVAL_ERR;
+    v.err = x;
+    return v;
 }
 
 
-
-// most number of children from one branch
-int max(int a, int b) {
-    if (a > b) {
-        return a;
-    }
-    return b;
-}
-
-int max_number_of_children(mpc_ast_t * t){
-    if (t->children_num == 0) {
-        return 0;
-    }
-    
-    int max_children = 0;
-    for (int i = 0; i < t->children_num; i++) {
-        max_children = max(max_children, max_number_of_children(t->children[i]));
-    }
-    return max_children + 1;
-}
 
