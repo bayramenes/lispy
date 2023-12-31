@@ -24,3 +24,10 @@ I will start documenting from Chapter 6 since chapters before aren't really a th
 5. Count the maximum number of branches of a single node in an AST using a new function int max_number_of_children(mpc_ast_t* t).
 6. Add a new function int max(int a, int b) that returns the maximum of two integers.
 7. Add support for textual operator names (add, sub, mul, div, mod, exp, max, min).
+
+
+
+## CHAPTER 8 BONUS:
+1. Add the ability to use the caret character ^ as an operator, that raises one number to the power of the other.
+2. Add the ability to use the % operator, which returns the remainder after division.
+3. coming soon (added decimal number support)

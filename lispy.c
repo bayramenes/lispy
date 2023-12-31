@@ -79,6 +79,9 @@ void lval_print(lval v);
 
 /*
 BONUS EXERCISES:
+1. Add the ability to use the caret character ^ as an operator, that raises one number to the power of the other.
+2. Add the ability to use the % operator, which returns the remainder after division.
+3. coming soon (added decimal number support)
 */
 
 
